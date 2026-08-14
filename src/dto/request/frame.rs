@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct FrameData {
-    frame: Vec<u8>,
+pub struct FrameData {
+    pub frame: Vec<u8>,
 }
