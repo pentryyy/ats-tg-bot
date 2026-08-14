@@ -40,10 +40,6 @@ impl AppConfig {
         vec![0u8; self.server.recv_buf]
     }
 
-    pub fn send_buf(&self) -> Vec<u8> {
-        vec![0u8; self.server.send_buf]
-    }
-
     pub fn log_level(&self) -> LevelFilter {
         match self.log_level.to_lowercase().as_str() {
             "off" => LevelFilter::Off,
