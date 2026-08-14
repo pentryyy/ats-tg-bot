@@ -38,8 +38,6 @@ impl UdpListener {
     pub async fn start_listening(self) -> Result<()> {
         let mut recv_buf = self.cfg.recv_buf();
 
-        println!("UDP сервер запущен и слушает на порту...");
-
         loop {
             let result: Result<(FrameData, SocketAddr)> =
                 self.socket_service.recv_from(&mut recv_buf).await;
