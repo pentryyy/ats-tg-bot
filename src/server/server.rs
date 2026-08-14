@@ -12,7 +12,7 @@ pub async fn run(cfg: &AppConfig) -> Result<()> {
     let cfg_clone = cfg.clone();
 
     let listener = UdpListener::new(cfg_clone, chat_ids).await?;
-    println!("UDP сервер запущен на {}", cfg.addr());
+    println!("UDP сервер запущен на {}", cfg.service_addr());
 
     listener.start_listening().await?;
 

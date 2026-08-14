@@ -1,13 +1,55 @@
 use anyhow::{Context, Result};
 use log::LevelFilter;
 use serde::{Deserialize, Serialize};
-use std::env;
 use std::fs;
+use std::str::FromStr;
+use std::{env, fmt};
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum DriverType {
+    Postgres,
+}
+
+impl fmt::Display for DriverType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DriverType::Postgres => write!(f, "postgres"),
+        }
+    }
+}
+
+impl FromStr for DriverType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "postgres" => Ok(DriverType::Postgres),
+            _ => Err(format!("Неизвестный driver: {}", s)),
+        }
+    }
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub log_level: String,
+    pub db: DbConfig,
     pub server: ServerConfig,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct DbConfig {
+    pub driver: DriverType,
+    pub database: String,
+    pub host: String,
+    pub port: u16,
+    pub credentials: CredentialsConfig,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct CredentialsConfig {
+    pub user: String,
+    pub password: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -32,7 +74,7 @@ impl AppConfig {
         Ok(cfg)
     }
 
-    pub fn addr(&self) -> String {
+    pub fn service_addr(&self) -> String {
         format!("{}:{}", self.server.host, self.server.port)
     }
 
@@ -50,5 +92,17 @@ impl AppConfig {
             "trace" => LevelFilter::Trace,
             _ => LevelFilter::Info,
         }
+    }
+
+    pub fn db_addr(&self) -> String {
+        format!(
+            "{}://{}:{}@{}:{}/{}",
+            self.db.driver,
+            self.db.credentials.user,
+            self.db.credentials.password,
+            self.db.host,
+            self.db.port,
+            self.db.database,
+        )
     }
 }

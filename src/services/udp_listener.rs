@@ -20,7 +20,7 @@ pub struct UdpListener {
 
 impl UdpListener {
     pub async fn new(cfg: AppConfig, chat_ids: Arc<Mutex<Vec<i64>>>) -> Result<Self> {
-        let socket_service = SocketService::bind(cfg.addr()).await?;
+        let socket_service = SocketService::bind(cfg.service_addr()).await?;
 
         let bot_token = env::var("TELOXIDE_TOKEN")
             .with_context(|| "Переменная окружения TELOXIDE_TOKEN не задана")?;

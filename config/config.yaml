@@ -1,5 +1,14 @@
 log_level: info
 
+db:
+  driver: postgres
+  database: ats_bot
+  host: localhost
+  port: 5432
+  credentials:
+    user: postgres
+    password: 1234pass
+
 server:
   recv_buf: 8192 # В байтах
   send_buf: 8192 # В байтах
