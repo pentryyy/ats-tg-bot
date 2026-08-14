@@ -3,6 +3,7 @@ mod dto;
 mod entities;
 mod server;
 mod services;
+mod repositories;
 
 use crate::config::config::AppConfig;
 use crate::server::server::run;
