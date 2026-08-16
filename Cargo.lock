@@ -145,6 +145,7 @@ dependencies = [
  "sqlx",
  "teloxide",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

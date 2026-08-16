@@ -10,9 +10,16 @@ use log::{error, info};
 use std::env;
 use std::sync::Arc;
 use std::time::Duration;
-use teloxide::Bot;
-use teloxide::prelude::Message;
+use teloxide::dptree::{self, deps};
+use teloxide::prelude::*;
+use teloxide::types::Update;
+use teloxide::{
+    Bot,
+    dispatching::{Dispatcher, UpdateFilterExt},
+};
+use tokio::signal;
 use tokio::time::interval;
+use tokio_util::sync::CancellationToken;
 
 pub async fn run(cfg: &AppConfig) -> Result<()> {
     init_logger(cfg);
@@ -22,17 +29,47 @@ pub async fn run(cfg: &AppConfig) -> Result<()> {
     let db_repo = Arc::new(DatabaseRepository::new(&cfg.db_addr()).await?);
     let collector = Arc::new(UserCollector::new(cfg.clone(), db_repo.clone()));
 
-    spawn_collector(collector.clone());
-    spawn_udp_listener(cfg, bot.clone(), collector.clone()).await?;
-    spawn_stats_reporter(collector.clone());
+    let cancel_token = CancellationToken::new();
+
+    spawn_collector(collector.clone(), cancel_token.clone());
+    spawn_udp_listener(cfg, bot.clone(), collector.clone(), cancel_token.clone()).await?;
+    spawn_stats_reporter(collector.clone(), cancel_token.clone());
+
+    let message_handler = |bot: Bot, msg: Message, collector: Arc<UserCollector>| async move {
+        handle_message(bot, msg, collector).await
+    };
+
+    let mut dispatcher = Dispatcher::builder(
+        bot,
+        dptree::entry().branch(Update::filter_message().endpoint(message_handler)),
+    )
+    .dependencies(deps![collector.clone()])
+    .build();
+
+    let shutdown_token = dispatcher.shutdown_token();
+    let handle = tokio::spawn(async move {
+        dispatcher.dispatch().await;
+    });
 
     info!("Telegram бот запущен, ожидаем сообщения...");
-    teloxide::repl(bot, move |bot, msg| {
-        let collector = collector.clone();
-        async move { handle_message(bot, msg, collector).await }
-    })
-    .await;
 
+    tokio::select! {
+        _ = signal::ctrl_c() => {
+            info!("Получен сигнал остановки, начинаем graceful shutdown...");
+        }
+    }
+
+    if let Err(e) = shutdown_token.shutdown() {
+        error!("Ошибка при остановке диспетчера: {}", e);
+    }
+
+    cancel_token.cancel();
+
+    let _ = tokio::time::timeout(Duration::from_secs(5), handle).await;
+
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    info!("Приложение завершено");
     Ok(())
 }
 
@@ -46,9 +83,9 @@ fn create_bot() -> Result<Bot> {
     Ok(Bot::new(token))
 }
 
-fn spawn_collector(collector: Arc<UserCollector>) {
+fn spawn_collector(collector: Arc<UserCollector>, cancel_token: CancellationToken) {
     tokio::spawn(async move {
-        if let Err(e) = collector.start_collecting().await {
+        if let Err(e) = collector.start_collecting(cancel_token).await {
             error!("Коллектор остановлен с ошибкой: {}", e);
         }
     });
@@ -59,8 +96,9 @@ async fn spawn_udp_listener(
     cfg: &AppConfig,
     bot: Bot,
     collector: Arc<UserCollector>,
+    cancel_token: CancellationToken,
 ) -> Result<()> {
-    let listener = UdpListener::new(cfg.clone(), bot, collector).await?;
+    let listener = UdpListener::new(cfg.clone(), bot, collector, cancel_token).await?;
     info!("UDP сервер запущен на {}", cfg.service_addr());
     tokio::spawn(async move {
         if let Err(e) = listener.start_listening().await {
@@ -70,13 +108,20 @@ async fn spawn_udp_listener(
     Ok(())
 }
 
-fn spawn_stats_reporter(collector: Arc<UserCollector>) {
+fn spawn_stats_reporter(collector: Arc<UserCollector>, cancel_token: CancellationToken) {
     tokio::spawn(async move {
         let mut interval = interval(Duration::from_secs(60));
         loop {
-            interval.tick().await;
-            if let Ok((total, active)) = collector.get_stats().await {
-                info!("Статистика: всего={}, активно={}", total, active);
+            tokio::select! {
+                _ = interval.tick() => {
+                    if let Ok((total, active)) = collector.get_stats().await {
+                        info!("Статистика: всего={}, активно={}", total, active);
+                    }
+                }
+                _ = cancel_token.cancelled() => {
+                    info!("Репортёр статистики завершает работу");
+                    break;
+                }
             }
         }
     });

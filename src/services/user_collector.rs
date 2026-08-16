@@ -7,6 +7,7 @@ use log::{debug, error, info};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::interval;
+use tokio_util::sync::CancellationToken;
 
 pub struct UserCollector {
     cfg: AppConfig,
@@ -23,7 +24,7 @@ impl UserCollector {
         }
     }
 
-    pub async fn start_collecting(&self) -> Result<()> {
+    pub async fn start_collecting(&self, cancel_token: CancellationToken) -> Result<()> {
         match self.repo.get_active_chat_ids().await {
             Ok(ids) => {
                 let mut active = self.active_users.lock().await;
@@ -72,6 +73,10 @@ impl UserCollector {
                             info!("Удалено {} старых записей", deleted);
                         }
                     }
+                }
+                _ = cancel_token.cancelled() => {
+                    info!("Коллектор пользователей завершает работу по сигналу");
+                    return Ok(());
                 }
             }
         }

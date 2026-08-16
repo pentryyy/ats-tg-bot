@@ -5,10 +5,10 @@ use crate::services::user_collector::UserCollector;
 use crate::traits::user_collector::UserCollectorTrait;
 use anyhow::Result;
 use log::{debug, error, info, warn};
-use std::net::SocketAddr;
 use std::sync::Arc;
 use teloxide::prelude::*;
 use teloxide::types::{ChatId, InputFile};
+use tokio_util::sync::CancellationToken;
 
 fn is_image(data: &[u8]) -> bool {
     // JPEG: FF D8 FF
@@ -31,10 +31,16 @@ pub struct UdpListener {
     socket_service: SocketService,
     bot: Bot,
     collector: Arc<UserCollector>,
+    cancel_token: CancellationToken,
 }
 
 impl UdpListener {
-    pub async fn new(cfg: AppConfig, bot: Bot, collector: Arc<UserCollector>) -> Result<Self> {
+    pub async fn new(
+        cfg: AppConfig,
+        bot: Bot,
+        collector: Arc<UserCollector>,
+        cancel_token: CancellationToken,
+    ) -> Result<Self> {
         let socket_service = SocketService::bind(cfg.service_addr()).await?;
 
         Ok(Self {
@@ -42,6 +48,7 @@ impl UdpListener {
             socket_service,
             bot,
             collector,
+            cancel_token,
         })
     }
 
@@ -49,71 +56,72 @@ impl UdpListener {
         let mut recv_buf = self.cfg.recv_buf();
 
         loop {
-            let result: Result<(FrameData, SocketAddr)> =
-                self.socket_service.recv_from(&mut recv_buf).await;
+            tokio::select! {
+                result = self.socket_service.recv_from::<FrameData>(&mut recv_buf) => {
+                    match result {
+                        Ok((frame_data, addr)) => {
+                            info!(
+                                "Получены данные от {}: размер {} байт",
+                                addr,
+                                frame_data.frame.len()
+                            );
 
-            match result {
-                Ok((frame_data, addr)) => {
-                    info!(
-                        "Получены данные от {}: размер {} байт",
-                        addr,
-                        frame_data.frame.len()
-                    );
+                            let active_ids_arc = self.collector.get_active_ids().await;
+                            if active_ids_arc.is_empty() {
+                                warn!("Нет активных пользователей для отправки");
+                                continue;
+                            }
+                            debug!("Отправка данных {} пользователям", active_ids_arc.len());
 
-                    let active_ids_arc = self.collector.get_active_ids().await;
-                    if active_ids_arc.is_empty() {
-                        warn!("Нет активных пользователей для отправки");
-                        continue;
-                    }
-                    debug!("Отправка данных {} пользователям", active_ids_arc.len());
+                            if !is_image(&frame_data.frame) {
+                                info!("Данные не являются изображением, отправка пропущена");
+                                continue;
+                            }
 
-                    if !is_image(&frame_data.frame) {
-                        info!("Данные не являются изображением, отправка пропущена");
-                        continue;
-                    }
+                            let file_id = self
+                                .upload_and_get_file_id(&active_ids_arc, &frame_data.frame)
+                                .await;
 
-                    let file_id = self
-                        .upload_and_get_file_id(&active_ids_arc, &frame_data.frame)
-                        .await;
-
-                    if let Some(file_id) = file_id {
-                        for chat_id in active_ids_arc
-                            .iter()
-                            .skip(1)
-                            .filter_map(|s| s.parse::<i64>().ok())
-                            .map(ChatId)
-                        {
-                            if let Err(e) = self
-                                .bot
-                                .send_photo(chat_id, InputFile::file_id(file_id.clone()))
-                                .await
-                            {
-                                error!("Ошибка отправки: {}", e);
+                            if let Some(file_id) = file_id {
+                                for chat_id in active_ids_arc
+                                    .iter()
+                                    .skip(1)
+                                    .filter_map(|s| s.parse::<i64>().ok())
+                                    .map(ChatId)
+                                {
+                                    if let Err(e) = self
+                                        .bot
+                                        .send_photo(chat_id, InputFile::file_id(file_id.clone()))
+                                        .await
+                                    {
+                                        error!("Ошибка отправки: {}", e);
+                                    }
+                                }
+                            } else {
+                                warn!("Не удалось получить file_id, отправляем с копированием");
+                                for chat_id in active_ids_arc
+                                    .iter()
+                                    .filter_map(|s| s.parse::<i64>().ok())
+                                    .map(ChatId)
+                                {
+                                    let file = InputFile::memory(frame_data.frame.clone());
+                                    if let Err(e) = self.bot.send_photo(chat_id, file).await {
+                                        error!("Ошибка отправки: {}", e);
+                                    }
+                                }
                             }
                         }
-                    } else {
-                        warn!("Не удалось получить file_id, отправляем с копированием");
-                        for chat_id in active_ids_arc
-                            .iter()
-                            .filter_map(|s| s.parse::<i64>().ok())
-                            .map(ChatId)
-                        {
-                            let file = InputFile::memory(frame_data.frame.clone());
-                            if let Err(e) = self.bot.send_photo(chat_id, file).await {
-                                error!("Ошибка отправки: {}", e);
-                            }
-                        }
+                        Err(e) => error!("Ошибка при получении данных: {}", e),
                     }
                 }
-                Err(e) => error!("Ошибка при получении данных: {}", e),
+                _ = self.cancel_token.cancelled() => {
+                    info!("UDP слушатель завершает работу по сигналу");
+                    return Ok(());
+                }
             }
         }
     }
 
-    /// Отправляет изображение первому активному пользователю и возвращает его `file_id`.
-    /// Используется для оптимизации массовой рассылки: полученный `file_id` позволяет
-    /// отправлять фото остальным пользователям без повторной передачи данных.
-    /// Возвращает `Some(file_id)` при успехе, иначе `None`.
     async fn upload_and_get_file_id(
         &self,
         active_ids: &Arc<Vec<String>>,
