@@ -1,19 +1,19 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio::time::{interval, Duration};
+use crate::repositories::chat_users::DatabaseRepository;
 use anyhow::Result;
 use log::{debug, error, info};
-use crate::repositories::chat_users::DatabaseRepository;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use tokio::time::{Duration, interval};
 
 pub struct UserCollector {
-    db: Arc<DatabaseRepository>,
+    repo: Arc<DatabaseRepository>,
     active_users: Arc<Mutex<Vec<String>>>,
 }
 
 impl UserCollector {
     pub fn new(db: Arc<DatabaseRepository>) -> Self {
         Self {
-            db,
+            repo: db,
             active_users: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -24,7 +24,7 @@ impl UserCollector {
         loop {
             interval.tick().await;
 
-            match self.db.deactivate_old_users(5).await {
+            match self.repo.deactivate_old_users(5).await {
                 Ok(affected) => {
                     if affected > 0 {
                         info!("Деактивировано {} пользователей", affected);
@@ -35,7 +35,7 @@ impl UserCollector {
                 }
             }
 
-            match self.db.get_active_chat_ids().await {
+            match self.repo.get_active_chat_ids().await {
                 Ok(ids) => {
                     let mut active = self.active_users.lock().await;
                     *active = ids;
@@ -51,7 +51,7 @@ impl UserCollector {
                 CLEANUP_COUNTER += 1;
                 if CLEANUP_COUNTER >= 120 {
                     CLEANUP_COUNTER = 0;
-                    if let Ok(deleted) = self.db.cleanup_old_users(7).await {
+                    if let Ok(deleted) = self.repo.cleanup_old_users(7).await {
                         if deleted > 0 {
                             info!("Удалено {} старых записей", deleted);
                         }
@@ -61,17 +61,27 @@ impl UserCollector {
         }
     }
 
-    pub async fn add_user_from_udp(&self, chat_id: &str, metadata: Option<serde_json::Value>) {
-        if let Err(e) = self.db.upsert_user(chat_id, metadata).await {
-            error!("Ошибка добавления пользователя {}: {}", chat_id, e);
-        }
-    }
-
     pub async fn get_active_ids(&self) -> Vec<String> {
         self.active_users.lock().await.clone()
     }
 
     pub async fn get_stats(&self) -> Result<(i64, i64)> {
-        self.db.get_stats().await.map_err(Into::into)
+        self.repo.get_stats().await.map_err(Into::into)
+    }
+
+    pub async fn add_user_from_telegram(&self, chat_id: &str) {
+        if let Err(e) = self.repo.upsert_user_from_telegram(chat_id).await {
+            error!("Ошибка регистрации пользователя {}: {}", chat_id, e);
+        }
+    }
+
+    pub async fn deactivate_user(&self, chat_id: &str) {
+        if let Err(e) = self.repo.set_user_active(chat_id, false).await {
+            error!("Ошибка деактивации пользователя {}: {}", chat_id, e);
+        }
+    }
+
+    pub async fn is_user_active(&self, chat_id: &str) -> bool {
+        self.repo.is_user_active(chat_id).await.unwrap_or(false)
     }
 }

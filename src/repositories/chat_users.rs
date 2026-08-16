@@ -20,33 +20,6 @@ impl DatabaseRepository {
         Ok(Self { pool })
     }
 
-    pub async fn upsert_user(
-        &self,
-        chat_id: &str,
-        metadata: Option<serde_json::Value>,
-    ) -> Result<()> {
-        let now = Utc::now();
-
-        sqlx::query(
-            r#"
-            INSERT INTO chat_users (chat_id, first_seen, last_seen, is_active, metadata)
-            VALUES ($1, $2, $3, true, $4)
-            ON CONFLICT (chat_id) DO UPDATE
-            SET last_seen = $3,
-                is_active = true,
-                metadata = COALESCE($4, chat_users.metadata)
-            "#,
-        )
-        .bind(chat_id)
-        .bind(now)
-        .bind(now)
-        .bind(metadata)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
-
     pub async fn get_active_chat_ids(&self) -> Result<Vec<String>> {
         let users = sqlx::query(
             r#"
@@ -112,5 +85,56 @@ impl DatabaseRepository {
         .await?;
 
         Ok(result.rows_affected())
+    }
+
+    pub async fn upsert_user_from_telegram(&self, chat_id: &str) -> Result<()> {
+        let now = Utc::now();
+        sqlx::query(
+            r#"
+            INSERT INTO chat_users (chat_id, first_seen, last_seen, is_active, metadata)
+            VALUES ($1, $2, $3, true, $4)
+            ON CONFLICT (chat_id) DO UPDATE
+            SET last_seen = $3,
+                is_active = true,
+                metadata = COALESCE($4, chat_users.metadata)
+            "#,
+        )
+        .bind(chat_id)
+        .bind(now)
+        .bind(now)
+        .bind(None::<serde_json::Value>)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn set_user_active(&self, chat_id: &str, active: bool) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE chat_users
+            SET is_active = $2
+            WHERE chat_id = $1
+            "#,
+        )
+        .bind(chat_id)
+        .bind(active)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn is_user_active(&self, chat_id: &str) -> Result<bool> {
+        let row = sqlx::query(
+            r#"
+            SELECT is_active
+            FROM chat_users
+            WHERE chat_id = $1
+            "#,
+        )
+        .bind(chat_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map_or(false, |r| r.try_get("is_active").unwrap_or(false)))
     }
 }
