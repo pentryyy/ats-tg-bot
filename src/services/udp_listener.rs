@@ -10,6 +10,22 @@ use std::sync::Arc;
 use teloxide::prelude::*;
 use teloxide::types::{ChatId, InputFile};
 
+fn is_image(data: &[u8]) -> bool {
+    // JPEG: FF D8 FF
+    if data.len() >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF {
+        return true;
+    }
+    // PNG: 89 50 4E 47
+    if data.len() >= 4 && data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47 {
+        return true;
+    }
+    // GIF: 47 49 46 38
+    if data.len() >= 4 && data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x38 {
+        return true;
+    }
+    false
+}
+
 pub struct UdpListener {
     cfg: AppConfig,
     socket_service: SocketService,
@@ -63,20 +79,15 @@ impl UdpListener {
                         };
 
                         let file = InputFile::memory(frame_data.frame.clone());
-
-                        if let Ok(text) = String::from_utf8(frame_data.frame.clone()) {
-                            if let Err(e) = self
-                                .bot
-                                .send_message(chat_id, format!("Получены данные:\n{}", text))
-                                .await
-                            {
-                                error!("Ошибка отправки сообщения {}: {}", chat_id, e);
+                        if is_image(&frame_data.frame) {
+                            if let Err(e) = self.bot.send_photo(chat_id, file).await {
+                                error!("Ошибка отправки фото {}: {}", chat_id, e);
                             }
                         } else {
                             if let Err(e) = self
                                 .bot
                                 .send_document(chat_id, file)
-                                .caption("Новые данные с устройства")
+                                .caption("Новые данные")
                                 .await
                             {
                                 error!("Ошибка отправки документа {}: {}", chat_id, e);
