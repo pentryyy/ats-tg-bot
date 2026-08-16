@@ -27,7 +27,7 @@ pub async fn run(cfg: &AppConfig) -> Result<()> {
     let db_repository = Arc::new(DatabaseRepository::new(&cfg.db_addr()).await?);
     info!("База данных подключена");
 
-    let collector = Arc::new(UserCollector::new(db_repository.clone()));
+    let collector = Arc::new(UserCollector::new(cfg.clone(), db_repository.clone()));
 
     let collector_clone = collector.clone();
     tokio::spawn(async move {

@@ -5,55 +5,52 @@ use async_trait::async_trait;
 use log::{debug, error, info};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tokio::time::{Duration, interval};
+use tokio::time::{interval, Duration};
+use crate::config::config::AppConfig;
 
 pub struct UserCollector {
+    cfg: AppConfig,
     repo: Arc<DatabaseRepository>,
     active_users: Arc<Mutex<Vec<String>>>,
 }
 
 impl UserCollector {
-    pub fn new(db: Arc<DatabaseRepository>) -> Self {
+    pub fn new(cfg: AppConfig, repo: Arc<DatabaseRepository>) -> Self {
         Self {
-            repo: db,
+            cfg,
+            repo,
             active_users: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     pub async fn start_collecting(&self) -> Result<()> {
-        let mut interval = interval(Duration::from_secs(30));
+        let update_interval = Duration::from_secs(self.cfg.user_collector.update_interval_secs);
+        let mut interval_timer = interval(update_interval);
+
+        let cleanup_interval = Duration::from_secs(self.cfg.user_collector.cleanup_interval_secs);
+        let mut cleanup_timer = interval(cleanup_interval);
 
         loop {
-            interval.tick().await;
+            tokio::select! {
+                _ = interval_timer.tick() => {
+                    let deactivate_minutes = self.cfg.user_collector.deactivate_after_minutes;
+                    if let Ok(affected) = self.repo.deactivate_old_users(deactivate_minutes).await {
+                        if affected > 0 {
+                            info!("Деактивировано {} пользователей", affected);
+                        }
+                    }
 
-            match self.repo.deactivate_old_users(5).await {
-                Ok(affected) => {
-                    if affected > 0 {
-                        info!("Деактивировано {} пользователей", affected);
+                    if let Ok(ids) = self.repo.get_active_chat_ids().await {
+                        let mut active = self.active_users.lock().await;
+                        *active = ids;
+                        debug!("Активных пользователей: {}", active.len());
+                    } else {
+                        error!("Ошибка получения пользователей");
                     }
                 }
-                Err(e) => {
-                    error!("Ошибка деактивации: {}", e);
-                }
-            }
-
-            match self.repo.get_active_chat_ids().await {
-                Ok(ids) => {
-                    let mut active = self.active_users.lock().await;
-                    *active = ids;
-                    debug!("Активных пользователей: {}", active.len());
-                }
-                Err(e) => {
-                    error!("Ошибка получения пользователей: {}", e);
-                }
-            }
-
-            static mut CLEANUP_COUNTER: u32 = 0;
-            unsafe {
-                CLEANUP_COUNTER += 1;
-                if CLEANUP_COUNTER >= 120 {
-                    CLEANUP_COUNTER = 0;
-                    if let Ok(deleted) = self.repo.cleanup_old_users(7).await {
+                _ = cleanup_timer.tick() => {
+                    let cleanup_days = self.cfg.user_collector.cleanup_after_days;
+                    if let Ok(deleted) = self.repo.cleanup_old_users(cleanup_days).await {
                         if deleted > 0 {
                             info!("Удалено {} старых записей", deleted);
                         }

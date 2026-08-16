@@ -33,8 +33,17 @@ impl FromStr for DriverType {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub log_level: String,
+    pub user_collector: UserCollectorConfig,
     pub db: DbConfig,
     pub server: ServerConfig,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct UserCollectorConfig {
+    pub update_interval_secs: u64,
+    pub deactivate_after_minutes: i64,
+    pub cleanup_after_days: i64,
+    pub cleanup_interval_secs: u64,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

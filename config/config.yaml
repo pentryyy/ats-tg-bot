@@ -1,5 +1,11 @@
 log_level: info
 
+user_collector:
+  update_interval_secs: 10
+  deactivate_after_minutes: 5
+  cleanup_after_days: 7
+  cleanup_interval_secs: 3600
+
 db:
   driver: postgres
   database: ats_bot
