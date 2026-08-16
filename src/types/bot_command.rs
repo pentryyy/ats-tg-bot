@@ -1,4 +1,5 @@
 use crate::traits::user_collector::UserCollectorTrait;
+use log::info;
 use std::sync::Arc;
 use teloxide::prelude::*;
 use teloxide::utils::command::BotCommands;
@@ -32,21 +33,27 @@ impl AtsBotCommand {
         msg: Message,
         collector: Arc<C>,
     ) -> ResponseResult<()> {
-        let chat_id_str = msg.chat.id.0.to_string();
+        let chat_id = msg.chat.id;
+        let chat_id_str = chat_id.0.to_string();
 
         match self {
             AtsBotCommand::Start => {
                 collector.add_user_from_telegram(&chat_id_str).await;
                 bot.send_message(
-                    msg.chat.id,
+                    chat_id,
                     "✅ Вы успешно зарегистрированы для получения данных!",
                 )
                 .await?;
+                info!(
+                    "Успешно зарегистрировано получение данных для chat id '{}'",
+                    chat_id
+                );
             }
             AtsBotCommand::Stop => {
                 collector.deactivate_user(&chat_id_str).await;
-                bot.send_message(msg.chat.id, "❌ Вы отписаны от получения данных.")
+                bot.send_message(chat_id, "❌ Вы отписаны от получения данных.")
                     .await?;
+                info!("Отписано от получения данных для chat id '{}'", chat_id);
             }
             AtsBotCommand::Status => {
                 let is_active = collector.is_user_active(&chat_id_str).await;
@@ -55,8 +62,9 @@ impl AtsBotCommand {
                 } else {
                     "не активен"
                 };
-                bot.send_message(msg.chat.id, format!("📊 Ваш статус: {}", status))
+                bot.send_message(chat_id, format!("📊 Ваш статус: {}", status))
                     .await?;
+                info!("Статус для chat id '{}': {}", chat_id, status);
             }
         }
         Ok(())
