@@ -1,3 +1,4 @@
+use crate::config::config::AppConfig;
 use crate::repositories::chat_users::DatabaseRepository;
 use crate::traits::user_collector::UserCollectorTrait;
 use anyhow::Result;
@@ -5,8 +6,7 @@ use async_trait::async_trait;
 use log::{debug, error, info};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tokio::time::{interval, Duration};
-use crate::config::config::AppConfig;
+use tokio::time::{Duration, interval};
 
 pub struct UserCollector {
     cfg: AppConfig,
@@ -24,6 +24,23 @@ impl UserCollector {
     }
 
     pub async fn start_collecting(&self) -> Result<()> {
+        match self.repo.get_active_chat_ids().await {
+            Ok(ids) => {
+                let mut active = self.active_users.lock().await;
+                *active = ids;
+                debug!(
+                    "Начальное количество активных пользователей: {}",
+                    active.len()
+                );
+            }
+            Err(e) => {
+                error!(
+                    "Ошибка получения начального списка активных пользователей: {}",
+                    e
+                );
+            }
+        }
+
         let update_interval = Duration::from_secs(self.cfg.user_collector.update_interval_secs);
         let mut interval_timer = interval(update_interval);
 
