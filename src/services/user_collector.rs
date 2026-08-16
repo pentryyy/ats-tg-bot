@@ -1,5 +1,7 @@
 use crate::repositories::chat_users::DatabaseRepository;
+use crate::traits::user_collector::UserCollectorTrait;
 use anyhow::Result;
+use async_trait::async_trait;
 use log::{debug, error, info};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -60,28 +62,31 @@ impl UserCollector {
             }
         }
     }
+}
 
-    pub async fn get_active_ids(&self) -> Vec<String> {
+#[async_trait]
+impl UserCollectorTrait for UserCollector {
+    async fn get_active_ids(&self) -> Vec<String> {
         self.active_users.lock().await.clone()
     }
 
-    pub async fn get_stats(&self) -> Result<(i64, i64)> {
+    async fn get_stats(&self) -> Result<(i64, i64)> {
         self.repo.get_stats().await.map_err(Into::into)
     }
 
-    pub async fn add_user_from_telegram(&self, chat_id: &str) {
+    async fn add_user_from_telegram(&self, chat_id: &str) {
         if let Err(e) = self.repo.upsert_user_from_telegram(chat_id).await {
             error!("Ошибка регистрации пользователя {}: {}", chat_id, e);
         }
     }
 
-    pub async fn deactivate_user(&self, chat_id: &str) {
+    async fn deactivate_user(&self, chat_id: &str) {
         if let Err(e) = self.repo.set_user_active(chat_id, false).await {
             error!("Ошибка деактивации пользователя {}: {}", chat_id, e);
         }
     }
 
-    pub async fn is_user_active(&self, chat_id: &str) -> bool {
+    async fn is_user_active(&self, chat_id: &str) -> bool {
         self.repo.is_user_active(chat_id).await.unwrap_or(false)
     }
 }

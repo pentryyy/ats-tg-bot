@@ -3,6 +3,7 @@ mod dto;
 mod repositories;
 mod server;
 mod services;
+mod traits;
 mod types;
 
 use crate::config::config::AppConfig;

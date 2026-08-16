@@ -1,4 +1,4 @@
-use crate::services::user_collector::UserCollector;
+use crate::traits::user_collector::UserCollectorTrait;
 use std::sync::Arc;
 use teloxide::prelude::*;
 use teloxide::utils::command::BotCommands;
@@ -15,11 +15,22 @@ pub enum AtsBotCommand {
 }
 
 impl AtsBotCommand {
-    pub async fn command_handler(
+    pub fn from_str(s: &str) -> Option<Self> {
+        let s_trim = s.trim_start_matches('/');
+
+        match s_trim {
+            "start" => Some(Self::Start),
+            "stop" => Some(Self::Stop),
+            "status" => Some(Self::Status),
+            _ => None,
+        }
+    }
+
+    pub async fn command_handler<C: UserCollectorTrait>(
         &self,
         bot: Bot,
         msg: Message,
-        collector: Arc<UserCollector>,
+        collector: Arc<C>,
     ) -> ResponseResult<()> {
         let chat_id_str = msg.chat.id.0.to_string();
 

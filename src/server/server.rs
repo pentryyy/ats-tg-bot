@@ -2,6 +2,7 @@ use crate::config::config::AppConfig;
 use crate::repositories::chat_users::DatabaseRepository;
 use crate::services::udp_listener::UdpListener;
 use crate::services::user_collector::UserCollector;
+use crate::traits::user_collector::UserCollectorTrait;
 use crate::types::bot_command::AtsBotCommand;
 use anyhow::{Context, Result};
 use env_logger::Builder;
@@ -62,13 +63,8 @@ pub async fn run(cfg: &AppConfig) -> Result<()> {
             if let Some(text) = msg.text() {
                 let parts: Vec<&str> = text.split_whitespace().collect();
                 if let Some(cmd_str) = parts.get(0) {
-                    let cmd = cmd_str.trim_start_matches('/');
-                    let command = match cmd {
-                        "start" => Some(AtsBotCommand::Start),
-                        "stop" => Some(AtsBotCommand::Stop),
-                        "status" => Some(AtsBotCommand::Status),
-                        _ => None,
-                    };
+                    let command = AtsBotCommand::from_str(cmd_str);
+
                     if let Some(cmd) = command {
                         cmd.command_handler(bot, msg, collector).await?;
                     }

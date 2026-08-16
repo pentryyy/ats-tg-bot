@@ -2,6 +2,7 @@ use crate::AppConfig;
 use crate::dto::request::frame::FrameData;
 use crate::services::socket::SocketService;
 use crate::services::user_collector::UserCollector;
+use crate::traits::user_collector::UserCollectorTrait;
 use anyhow::Result;
 use log::{debug, error, info, warn};
 use std::net::SocketAddr;
