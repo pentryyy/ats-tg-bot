@@ -81,10 +81,13 @@ impl UdpListener {
                         let file = InputFile::memory(frame_data.frame.clone());
                         if is_image(&frame_data.frame) {
                             if let Err(e) = self.bot.send_photo(chat_id, file).await {
-                                error!("Ошибка отправки фото {}: {}", chat_id, e);
+                                error!("Ошибка отправки фото для chat id '{}': {}", chat_id, e);
                             }
                         } else {
-                            info!("Данные не являются изображением, отправка пропущена для {}", chat_id);
+                            info!(
+                                "Данные не являются изображением, отправка пропущена для chat id '{}'",
+                                chat_id
+                            );
                         }
                     }
                 }
