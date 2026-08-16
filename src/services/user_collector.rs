@@ -11,7 +11,7 @@ use tokio::time::interval;
 pub struct UserCollector {
     cfg: AppConfig,
     repo: Arc<DatabaseRepository>,
-    active_users: Arc<Mutex<Vec<String>>>,
+    active_users: Arc<Mutex<Arc<Vec<String>>>>,
 }
 
 impl UserCollector {
@@ -19,7 +19,7 @@ impl UserCollector {
         Self {
             cfg,
             repo,
-            active_users: Arc::new(Mutex::new(Vec::new())),
+            active_users: Arc::new(Mutex::new(Arc::new(Vec::new()))),
         }
     }
 
@@ -27,7 +27,7 @@ impl UserCollector {
         match self.repo.get_active_chat_ids().await {
             Ok(ids) => {
                 let mut active = self.active_users.lock().await;
-                *active = ids;
+                *active = Arc::new(ids);
                 debug!(
                     "Начальное количество активных пользователей: {}",
                     active.len()
@@ -59,7 +59,7 @@ impl UserCollector {
 
                     if let Ok(ids) = self.repo.get_active_chat_ids().await {
                         let mut active = self.active_users.lock().await;
-                        *active = ids;
+                        *active = Arc::new(ids);
                         debug!("Активных пользователей: {}", active.len());
                     } else {
                         error!("Ошибка получения пользователей");
@@ -80,7 +80,7 @@ impl UserCollector {
 
 #[async_trait]
 impl UserCollectorTrait for UserCollector {
-    async fn get_active_ids(&self) -> Vec<String> {
+    async fn get_active_ids(&self) -> Arc<Vec<String>> {
         self.active_users.lock().await.clone()
     }
 

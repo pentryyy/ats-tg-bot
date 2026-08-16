@@ -60,41 +60,68 @@ impl UdpListener {
                         frame_data.frame.len()
                     );
 
-                    let active_ids = self.collector.get_active_ids().await;
-
-                    if active_ids.is_empty() {
+                    let active_ids_arc = self.collector.get_active_ids().await;
+                    if active_ids_arc.is_empty() {
                         warn!("Нет активных пользователей для отправки");
                         continue;
                     }
+                    debug!("Отправка данных {} пользователям", active_ids_arc.len());
 
-                    debug!("Отправка данных {} пользователям", active_ids.len());
+                    if !is_image(&frame_data.frame) {
+                        info!("Данные не являются изображением, отправка пропущена");
+                        continue;
+                    }
 
-                    for chat_id in active_ids {
-                        let chat_id = match chat_id.parse::<i64>() {
-                            Ok(id) => ChatId(id),
-                            Err(_) => {
-                                warn!("Некорректный chat_id: {}", chat_id);
-                                continue;
+                    let file_id = self
+                        .upload_and_get_file_id(&active_ids_arc, &frame_data.frame)
+                        .await;
+
+                    if let Some(file_id) = file_id {
+                        for chat_id in active_ids_arc
+                            .iter()
+                            .skip(1)
+                            .filter_map(|s| s.parse::<i64>().ok())
+                            .map(ChatId)
+                        {
+                            if let Err(e) = self
+                                .bot
+                                .send_photo(chat_id, InputFile::file_id(file_id.clone()))
+                                .await
+                            {
+                                error!("Ошибка отправки: {}", e);
                             }
-                        };
-
-                        let file = InputFile::memory(frame_data.frame.clone());
-                        if is_image(&frame_data.frame) {
+                        }
+                    } else {
+                        warn!("Не удалось получить file_id, отправляем с копированием");
+                        for chat_id in active_ids_arc
+                            .iter()
+                            .filter_map(|s| s.parse::<i64>().ok())
+                            .map(ChatId)
+                        {
+                            let file = InputFile::memory(frame_data.frame.clone());
                             if let Err(e) = self.bot.send_photo(chat_id, file).await {
-                                error!("Ошибка отправки фото для chat id '{}': {}", chat_id, e);
+                                error!("Ошибка отправки: {}", e);
                             }
-                        } else {
-                            info!(
-                                "Данные не являются изображением, отправка пропущена для chat id '{}'",
-                                chat_id
-                            );
                         }
                     }
                 }
-                Err(e) => {
-                    error!("Ошибка при получении данных: {}", e);
-                }
+                Err(e) => error!("Ошибка при получении данных: {}", e),
             }
         }
+    }
+
+    async fn upload_and_get_file_id(
+        &self,
+        active_ids: &Arc<Vec<String>>,
+        data: &[u8],
+    ) -> Option<String> {
+        let first_chat_id = active_ids.first().and_then(|s| s.parse::<i64>().ok())?;
+
+        let chat_id = ChatId(first_chat_id);
+        let file = InputFile::memory(data.to_vec());
+
+        let msg = self.bot.send_photo(chat_id, file).await.ok()?;
+        let photo = msg.photo()?.first()?;
+        Some(photo.file.id.clone())
     }
 }

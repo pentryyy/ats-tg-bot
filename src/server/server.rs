@@ -61,11 +61,8 @@ pub async fn run(cfg: &AppConfig) -> Result<()> {
         let collector = collector.clone();
         async move {
             if let Some(text) = msg.text() {
-                let parts: Vec<&str> = text.split_whitespace().collect();
-                if let Some(cmd_str) = parts.get(0) {
-                    let command = AtsBotCommand::from_str(cmd_str);
-
-                    if let Some(cmd) = command {
+                if let Some(cmd_str) = text.split_whitespace().next() {
+                    if let Some(cmd) = AtsBotCommand::from_str(cmd_str) {
                         cmd.command_handler(bot, msg, collector).await?;
                     }
                 }
