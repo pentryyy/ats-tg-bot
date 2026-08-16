@@ -15,62 +15,84 @@ use teloxide::prelude::Message;
 use tokio::time::interval;
 
 pub async fn run(cfg: &AppConfig) -> Result<()> {
-    Builder::new().filter_level(cfg.log_level()).init();
-
+    init_logger(cfg);
     info!("Запуск приложения...");
 
-    let bot_token = env::var("TELOXIDE_TOKEN")
+    let bot = create_bot()?;
+    let db_repo = Arc::new(DatabaseRepository::new(&cfg.db_addr()).await?);
+    let collector = Arc::new(UserCollector::new(cfg.clone(), db_repo.clone()));
+
+    spawn_collector(collector.clone());
+    spawn_udp_listener(cfg, bot.clone(), collector.clone()).await?;
+    spawn_stats_reporter(collector.clone());
+
+    info!("Telegram бот запущен, ожидаем сообщения...");
+    teloxide::repl(bot, move |bot, msg| {
+        let collector = collector.clone();
+        async move { handle_message(bot, msg, collector).await }
+    })
+    .await;
+
+    Ok(())
+}
+
+fn init_logger(cfg: &AppConfig) {
+    Builder::new().filter_level(cfg.log_level()).init();
+}
+
+fn create_bot() -> Result<Bot> {
+    let token = env::var("TELOXIDE_TOKEN")
         .with_context(|| "Переменная окружения TELOXIDE_TOKEN не задана")?;
-    let bot = Bot::new(bot_token);
-    info!("TG бот подключен");
+    Ok(Bot::new(token))
+}
 
-    let db_repository = Arc::new(DatabaseRepository::new(&cfg.db_addr()).await?);
-    info!("База данных подключена");
-
-    let collector = Arc::new(UserCollector::new(cfg.clone(), db_repository.clone()));
-
-    let collector_clone = collector.clone();
+fn spawn_collector(collector: Arc<UserCollector>) {
     tokio::spawn(async move {
-        if let Err(e) = collector_clone.start_collecting().await {
+        if let Err(e) = collector.start_collecting().await {
             error!("Коллектор остановлен с ошибкой: {}", e);
         }
     });
     info!("Коллектор пользователей запущен");
+}
 
-    let udp_listener = UdpListener::new(cfg.clone(), bot.clone(), collector.clone()).await?;
+async fn spawn_udp_listener(
+    cfg: &AppConfig,
+    bot: Bot,
+    collector: Arc<UserCollector>,
+) -> Result<()> {
+    let listener = UdpListener::new(cfg.clone(), bot, collector).await?;
     info!("UDP сервер запущен на {}", cfg.service_addr());
     tokio::spawn(async move {
-        if let Err(e) = udp_listener.start_listening().await {
+        if let Err(e) = listener.start_listening().await {
             error!("UDP слушатель остановлен с ошибкой: {}", e);
         }
     });
+    Ok(())
+}
 
-    let stats_collector = collector.clone();
+fn spawn_stats_reporter(collector: Arc<UserCollector>) {
     tokio::spawn(async move {
         let mut interval = interval(Duration::from_secs(60));
         loop {
             interval.tick().await;
-            if let Ok((total, active)) = stats_collector.get_stats().await {
+            if let Ok((total, active)) = collector.get_stats().await {
                 info!("Статистика: всего={}, активно={}", total, active);
             }
         }
     });
+}
 
-    info!("Telegram бот запущен, ожидаем сообщения...");
-    teloxide::repl(bot, move |bot: Bot, msg: Message| {
-        let collector = collector.clone();
-        async move {
-            if let Some(text) = msg.text() {
-                if let Some(cmd_str) = text.split_whitespace().next() {
-                    if let Some(cmd) = AtsBotCommand::from_str(cmd_str) {
-                        cmd.command_handler(bot, msg, collector).await?;
-                    }
-                }
+async fn handle_message(
+    bot: Bot,
+    msg: Message,
+    collector: Arc<UserCollector>,
+) -> Result<(), teloxide::RequestError> {
+    if let Some(text) = msg.text() {
+        if let Some(cmd_str) = text.split_whitespace().next() {
+            if let Some(cmd) = AtsBotCommand::from_str(cmd_str) {
+                cmd.command_handler(bot, msg, collector).await?;
             }
-            Ok(())
         }
-    })
-    .await;
-
+    }
     Ok(())
 }
