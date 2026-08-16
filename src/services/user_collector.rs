@@ -35,7 +35,7 @@ impl UserCollector {
                 }
             }
 
-            match self.db.get_active_call_ids().await {
+            match self.db.get_active_chat_ids().await {
                 Ok(ids) => {
                     let mut active = self.active_users.lock().await;
                     *active = ids;
@@ -61,9 +61,9 @@ impl UserCollector {
         }
     }
 
-    pub async fn add_user_from_udp(&self, call_id: &str, metadata: Option<serde_json::Value>) {
-        if let Err(e) = self.db.upsert_user(call_id, metadata).await {
-            error!("Ошибка добавления пользователя {}: {}", call_id, e);
+    pub async fn add_user_from_udp(&self, chat_id: &str, metadata: Option<serde_json::Value>) {
+        if let Err(e) = self.db.upsert_user(chat_id, metadata).await {
+            error!("Ошибка добавления пользователя {}: {}", chat_id, e);
         }
     }
 

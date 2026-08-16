@@ -4,7 +4,7 @@ use sqlx::FromRow;
 #[derive(Debug, Clone, FromRow)]
 pub struct ChatUser {
     pub id: i64,
-    pub call_id: String,
+    pub chat_id: String,
     pub first_seen: DateTime<Utc>,
     pub last_seen: DateTime<Utc>,
     pub is_active: bool,
@@ -14,6 +14,6 @@ pub struct ChatUser {
 
 #[derive(Debug, Clone, FromRow)]
 pub struct ActiveUser {
-    pub call_id: String,
+    pub chat_id: String,
     pub last_seen: DateTime<Utc>,
 }

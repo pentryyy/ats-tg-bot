@@ -22,22 +22,22 @@ impl DatabaseRepository {
 
     pub async fn upsert_user(
         &self,
-        call_id: &str,
+        chat_id: &str,
         metadata: Option<serde_json::Value>,
     ) -> Result<()> {
         let now = Utc::now();
 
         sqlx::query(
             r#"
-            INSERT INTO chat_users (call_id, first_seen, last_seen, is_active, metadata)
+            INSERT INTO chat_users (chat_id, first_seen, last_seen, is_active, metadata)
             VALUES ($1, $2, $3, true, $4)
-            ON CONFLICT (call_id) DO UPDATE
+            ON CONFLICT (chat_id) DO UPDATE
             SET last_seen = $3,
                 is_active = true,
                 metadata = COALESCE($4, chat_users.metadata)
             "#,
         )
-        .bind(call_id)
+        .bind(chat_id)
         .bind(now)
         .bind(now)
         .bind(metadata)
@@ -47,10 +47,10 @@ impl DatabaseRepository {
         Ok(())
     }
 
-    pub async fn get_active_call_ids(&self) -> Result<Vec<String>> {
+    pub async fn get_active_chat_ids(&self) -> Result<Vec<String>> {
         let users = sqlx::query(
             r#"
-        SELECT call_id
+        SELECT chat_id
         FROM chat_users
         WHERE is_active = true
         AND last_seen > NOW() - INTERVAL '5 minutes'
@@ -61,7 +61,7 @@ impl DatabaseRepository {
 
         Ok(users
             .iter()
-            .map(|row| row.try_get("call_id"))
+            .map(|row| row.try_get("chat_id"))
             .collect::<Result<Vec<String>, _>>()?)
     }
 

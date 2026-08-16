@@ -52,7 +52,7 @@ impl UdpListener {
                         frame_data.frame.len()
                     );
 
-                    if let Some(call_id) = self.parse_call_id(&frame_data.frame) {
+                    if let Some(chat_id) = self.parse_chat_id(&frame_data.frame) {
                         let metadata = serde_json::json!({
                             "source": addr.to_string(),
                             "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -60,10 +60,10 @@ impl UdpListener {
                         });
 
                         self.collector
-                            .add_user_from_udp(&call_id, Some(metadata))
+                            .add_user_from_udp(&chat_id, Some(metadata))
                             .await;
 
-                        debug!("Добавлен/обновлен пользователь: {}", call_id);
+                        debug!("Добавлен/обновлен пользователь: {}", chat_id);
                     }
 
                     let active_ids = self.collector.get_active_ids().await;
@@ -75,11 +75,11 @@ impl UdpListener {
 
                     debug!("Отправка данных {} пользователям", active_ids.len());
 
-                    for call_id in active_ids {
-                        let chat_id = match call_id.parse::<i64>() {
+                    for chat_id in active_ids {
+                        let chat_id = match chat_id.parse::<i64>() {
                             Ok(id) => ChatId(id),
                             Err(_) => {
-                                warn!("Некорректный chat_id: {}", call_id);
+                                warn!("Некорректный chat_id: {}", chat_id);
                                 continue;
                             }
                         };
@@ -113,7 +113,7 @@ impl UdpListener {
         }
     }
 
-    fn parse_call_id(&self, data: &[u8]) -> Option<String> {
+    fn parse_chat_id(&self, data: &[u8]) -> Option<String> {
         if let Ok(text) = String::from_utf8(data.to_vec()) {
             let trimmed = text.trim();
             if !trimmed.is_empty() && trimmed.len() < 50 {
@@ -122,12 +122,12 @@ impl UdpListener {
         }
 
         if let Ok(json) = serde_json::from_slice::<serde_json::Value>(data) {
-            if let Some(call_id) = json
-                .get("call_id")
+            if let Some(chat_id) = json
+                .get("chat_id")
                 .or_else(|| json.get("chat_id"))
                 .and_then(|v| v.as_str())
             {
-                return Some(call_id.to_string());
+                return Some(chat_id.to_string());
             }
         }
 
