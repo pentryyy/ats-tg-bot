@@ -1,10 +1,10 @@
 log_level: info
 
 user_collector:
-  update_interval_secs: 10
-  deactivate_after_minutes: 5
-  cleanup_after_days: 7
-  cleanup_interval_secs: 3600
+  update_interval: "10s"
+  deactivate_after: "5m"
+  cleanup_after: "7d"
+  cleanup_interval: "1h"
 
 db:
   driver: postgres

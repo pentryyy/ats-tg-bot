@@ -1,9 +1,20 @@
 use anyhow::{Context, Result};
 use log::LevelFilter;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::fs;
 use std::str::FromStr;
+use std::time::Duration;
 use std::{env, fmt};
+
+fn deserialize_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    humantime::parse_duration(&s).map_err(|e| {
+        serde::de::Error::custom(format!("некорректное значение result_delay={:?}: {}", s, e))
+    })
+}
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "lowercase")]
@@ -40,10 +51,17 @@ pub struct AppConfig {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct UserCollectorConfig {
-    pub update_interval_secs: u64,
-    pub deactivate_after_minutes: i64,
-    pub cleanup_after_days: i64,
-    pub cleanup_interval_secs: u64,
+    #[serde(deserialize_with = "deserialize_duration")]
+    pub update_interval: Duration,
+
+    #[serde(deserialize_with = "deserialize_duration")]
+    pub deactivate_after: Duration,
+
+    #[serde(deserialize_with = "deserialize_duration")]
+    pub cleanup_after: Duration,
+
+    #[serde(deserialize_with = "deserialize_duration")]
+    pub cleanup_interval: Duration,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -80,6 +98,14 @@ impl AppConfig {
             .with_context(|| format!("Ошибка парсинга конфига {:?}", config_path))?;
 
         Ok(cfg)
+    }
+
+    pub fn deactivate_after_minutes(&self) -> i64 {
+        (self.user_collector.deactivate_after.as_secs() / 60) as i64
+    }
+
+    pub fn cleanup_after_days(&self) -> i64 {
+        (self.user_collector.cleanup_after.as_secs() / 86400) as i64
     }
 
     pub fn service_addr(&self) -> String {

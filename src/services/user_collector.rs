@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use log::{debug, error, info};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tokio::time::{Duration, interval};
+use tokio::time::interval;
 
 pub struct UserCollector {
     cfg: AppConfig,
@@ -41,16 +41,16 @@ impl UserCollector {
             }
         }
 
-        let update_interval = Duration::from_secs(self.cfg.user_collector.update_interval_secs);
+        let update_interval = self.cfg.user_collector.update_interval;
         let mut interval_timer = interval(update_interval);
 
-        let cleanup_interval = Duration::from_secs(self.cfg.user_collector.cleanup_interval_secs);
+        let cleanup_interval = self.cfg.user_collector.cleanup_interval;
         let mut cleanup_timer = interval(cleanup_interval);
 
         loop {
             tokio::select! {
                 _ = interval_timer.tick() => {
-                    let deactivate_minutes = self.cfg.user_collector.deactivate_after_minutes;
+                    let deactivate_minutes = self.cfg.deactivate_after_minutes();
                     if let Ok(affected) = self.repo.deactivate_old_users(deactivate_minutes).await {
                         if affected > 0 {
                             info!("Деактивировано {} пользователей", affected);
@@ -66,7 +66,7 @@ impl UserCollector {
                     }
                 }
                 _ = cleanup_timer.tick() => {
-                    let cleanup_days = self.cfg.user_collector.cleanup_after_days;
+                    let cleanup_days = self.cfg.cleanup_after_days();
                     if let Ok(deleted) = self.repo.cleanup_old_users(cleanup_days).await {
                         if deleted > 0 {
                             info!("Удалено {} старых записей", deleted);
