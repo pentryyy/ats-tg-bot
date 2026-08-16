@@ -1,1 +1,1 @@
-pub mod ats_users;
+pub mod chat_users;

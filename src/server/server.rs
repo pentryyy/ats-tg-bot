@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use log::{error, info};
 use tokio::time::interval;
-use crate::repositories::ats_users::DatabaseRepository;
+use crate::repositories::chat_users::DatabaseRepository;
 use crate::services::user_collector::UserCollector;
 
 pub async fn run(cfg: &AppConfig) -> Result<()> {

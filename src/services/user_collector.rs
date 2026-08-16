@@ -3,7 +3,7 @@ use tokio::sync::Mutex;
 use tokio::time::{interval, Duration};
 use anyhow::Result;
 use log::{debug, error, info};
-use crate::repositories::ats_users::DatabaseRepository;
+use crate::repositories::chat_users::DatabaseRepository;
 
 pub struct UserCollector {
     db: Arc<DatabaseRepository>,
