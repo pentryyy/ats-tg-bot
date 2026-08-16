@@ -11,9 +11,3 @@ pub struct ChatUser {
     pub metadata: Option<serde_json::Value>,
     pub created_at: DateTime<Utc>,
 }
-
-#[derive(Debug, Clone, FromRow)]
-pub struct ActiveUser {
-    pub chat_id: String,
-    pub last_seen: DateTime<Utc>,
-}
