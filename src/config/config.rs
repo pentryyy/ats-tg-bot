@@ -48,7 +48,7 @@ pub struct DbConfig {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CredentialsConfig {
-    pub user: String,
+    pub username: String,
     pub password: String,
 }
 
@@ -98,7 +98,7 @@ impl AppConfig {
         format!(
             "{}://{}:{}@{}:{}/{}",
             self.db.driver,
-            self.db.credentials.user,
+            self.db.credentials.username,
             self.db.credentials.password,
             self.db.host,
             self.db.port,
