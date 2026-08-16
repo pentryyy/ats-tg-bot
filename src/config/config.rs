@@ -55,7 +55,6 @@ pub struct CredentialsConfig {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ServerConfig {
     pub recv_buf: usize,
-    pub send_buf: usize,
     pub host: String,
     pub port: u16,
 }

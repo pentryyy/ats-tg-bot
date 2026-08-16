@@ -11,6 +11,5 @@ db:
 
 server:
   recv_buf: 8192 # В байтах
-  send_buf: 8192 # В байтах
   host: 127.0.0.1
   port: 8080
