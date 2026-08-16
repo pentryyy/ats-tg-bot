@@ -84,14 +84,7 @@ impl UdpListener {
                                 error!("Ошибка отправки фото {}: {}", chat_id, e);
                             }
                         } else {
-                            if let Err(e) = self
-                                .bot
-                                .send_document(chat_id, file)
-                                .caption("Новые данные")
-                                .await
-                            {
-                                error!("Ошибка отправки документа {}: {}", chat_id, e);
-                            }
+                            info!("Данные не являются изображением, отправка пропущена для {}", chat_id);
                         }
                     }
                 }
