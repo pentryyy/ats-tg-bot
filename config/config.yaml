@@ -10,6 +10,6 @@ db:
     password: 1234pass
 
 server:
-  recv_buf: 8192 # В байтах
+  recv_buf: 65536 # В байтах
   host: 127.0.0.1
   port: 8080
