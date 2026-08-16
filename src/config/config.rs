@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 use log::LevelFilter;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::fs;
-use std::str::FromStr;
 use std::time::Duration;
 use std::{env, fmt};
 
@@ -16,7 +15,7 @@ where
     })
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DriverType {
     Postgres,
@@ -26,17 +25,6 @@ impl fmt::Display for DriverType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DriverType::Postgres => write!(f, "postgres"),
-        }
-    }
-}
-
-impl FromStr for DriverType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "postgres" => Ok(DriverType::Postgres),
-            _ => Err(format!("Неизвестный driver: {}", s)),
         }
     }
 }
