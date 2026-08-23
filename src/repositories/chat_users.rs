@@ -1,4 +1,6 @@
+use crate::traits::database_repository::DatabaseRepositoryTrait;
 use anyhow::Result;
+use async_trait::async_trait;
 use chrono::Utc;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Row};
@@ -19,8 +21,11 @@ impl DatabaseRepository {
 
         Ok(Self { pool })
     }
+}
 
-    pub async fn get_active_chat_ids(&self) -> Result<Vec<String>> {
+#[async_trait]
+impl DatabaseRepositoryTrait for DatabaseRepository {
+    async fn get_active_chat_ids(&self) -> Result<Vec<String>> {
         let users = sqlx::query(
             r#"
         SELECT chat_id
@@ -38,7 +43,7 @@ impl DatabaseRepository {
             .collect::<Result<Vec<String>, _>>()?)
     }
 
-    pub async fn deactivate_old_users(&self, timeout_minutes: i64) -> Result<u64> {
+    async fn deactivate_old_users(&self, timeout_minutes: i64) -> Result<u64> {
         let result = sqlx::query(
             r#"
             UPDATE chat_users
@@ -54,7 +59,7 @@ impl DatabaseRepository {
         Ok(result.rows_affected())
     }
 
-    pub async fn get_stats(&self) -> Result<(i64, i64)> {
+    async fn get_stats(&self) -> Result<(i64, i64)> {
         let result = sqlx::query(
             r#"
             SELECT
@@ -72,7 +77,7 @@ impl DatabaseRepository {
         Ok((total, active))
     }
 
-    pub async fn cleanup_old_users(&self, days: i64) -> Result<u64> {
+    async fn cleanup_old_users(&self, days: i64) -> Result<u64> {
         let result = sqlx::query(
             r#"
             DELETE FROM chat_users
@@ -87,7 +92,7 @@ impl DatabaseRepository {
         Ok(result.rows_affected())
     }
 
-    pub async fn upsert_user_from_telegram(&self, chat_id: &str) -> Result<()> {
+    async fn upsert_user_from_telegram(&self, chat_id: &str) -> Result<()> {
         let now = Utc::now();
         sqlx::query(
             r#"
@@ -108,7 +113,7 @@ impl DatabaseRepository {
         Ok(())
     }
 
-    pub async fn set_user_active(&self, chat_id: &str, active: bool) -> Result<()> {
+    async fn set_user_active(&self, chat_id: &str, active: bool) -> Result<()> {
         sqlx::query(
             r#"
             UPDATE chat_users
@@ -123,7 +128,7 @@ impl DatabaseRepository {
         Ok(())
     }
 
-    pub async fn is_user_active(&self, chat_id: &str) -> Result<bool> {
+    async fn is_user_active(&self, chat_id: &str) -> Result<bool> {
         let row = sqlx::query(
             r#"
             SELECT is_active

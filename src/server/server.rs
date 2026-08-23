@@ -1,5 +1,6 @@
 use crate::config::config::AppConfig;
 use crate::repositories::chat_users::DatabaseRepository;
+use crate::services::socket::SocketService;
 use crate::services::udp_listener::UdpListener;
 use crate::services::user_collector::UserCollector;
 use crate::traits::user_collector::UserCollectorTrait;
@@ -98,7 +99,9 @@ async fn spawn_udp_listener(
     collector: Arc<UserCollector>,
     cancel_token: CancellationToken,
 ) -> Result<()> {
-    let listener = UdpListener::new(cfg.clone(), bot, collector, cancel_token).await?;
+    let socket_service = SocketService::bind(cfg.service_addr()).await?;
+    let listener =
+        UdpListener::new(cfg.clone(), socket_service, bot, collector, cancel_token).await;
     info!("UDP сервер запущен на {}", cfg.service_addr());
     tokio::spawn(async move {
         if let Err(e) = listener.start_listening().await {
