@@ -17,6 +17,7 @@ use teloxide::{
     Bot,
     dispatching::{Dispatcher, UpdateFilterExt},
 };
+use tokio::signal;
 use tokio::time::interval;
 
 pub async fn run(cfg: &AppConfig) -> Result<()> {
@@ -48,6 +49,13 @@ pub async fn run(cfg: &AppConfig) -> Result<()> {
     });
 
     info!("Telegram бот запущен, ожидаем сообщения...");
+
+    let ctrl_c = signal::ctrl_c();
+    tokio::select! {
+        _ = ctrl_c => {
+            info!("Получен сигнал завершения, останавливаем приложение...");
+        }
+    }
 
     if let Err(e) = shutdown_token.shutdown() {
         error!("Ошибка при остановке диспетчера: {}", e);
