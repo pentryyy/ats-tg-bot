@@ -293,6 +293,7 @@ mod tests {
 
         let active = collector.get_active_ids().await;
         assert_eq!(active.as_ref(), &vec!["after_update".to_string()]);
-        handle.await.unwrap();
+        handle.abort();
+        let _ = handle.await;
     }
 }
