@@ -22,7 +22,7 @@ use tokio::time::interval;
 
 pub async fn run(cfg: &AppConfig) -> Result<()> {
     init_logger(cfg);
-    info!("Запуск приложения...");
+    info!("Запуск сервера...");
 
     let bot = create_bot()?;
     let db_repo = Arc::new(DatabaseRepository::new(&cfg.db_addr()).await?);
@@ -53,7 +53,7 @@ pub async fn run(cfg: &AppConfig) -> Result<()> {
     let ctrl_c = signal::ctrl_c();
     tokio::select! {
         _ = ctrl_c => {
-            info!("Получен сигнал завершения, останавливаем приложение...");
+            info!("Получен сигнал завершения, останавливаем сервер...");
         }
     }
 
@@ -68,7 +68,7 @@ pub async fn run(cfg: &AppConfig) -> Result<()> {
 
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    info!("Приложение завершено");
+    info!("Сервер остановлен");
     Ok(())
 }
 
