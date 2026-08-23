@@ -13,14 +13,11 @@ use std::sync::Arc;
 use std::time::Duration;
 use teloxide::dptree::{self, deps};
 use teloxide::prelude::*;
-use teloxide::types::Update;
 use teloxide::{
     Bot,
     dispatching::{Dispatcher, UpdateFilterExt},
 };
-use tokio::signal;
 use tokio::time::interval;
-use tokio_util::sync::CancellationToken;
 
 pub async fn run(cfg: &AppConfig) -> Result<()> {
     init_logger(cfg);
@@ -30,11 +27,9 @@ pub async fn run(cfg: &AppConfig) -> Result<()> {
     let db_repo = Arc::new(DatabaseRepository::new(&cfg.db_addr()).await?);
     let collector = Arc::new(UserCollector::new(cfg.clone(), db_repo.clone()));
 
-    let cancel_token = CancellationToken::new();
-
-    spawn_collector(collector.clone(), cancel_token.clone());
-    spawn_udp_listener(cfg, bot.clone(), collector.clone(), cancel_token.clone()).await?;
-    spawn_stats_reporter(collector.clone(), cancel_token.clone());
+    let collector_handle = spawn_collector(collector.clone());
+    let udp_handle = spawn_udp_listener(cfg, bot.clone(), collector.clone()).await?;
+    let stats_handle = spawn_stats_reporter(collector.clone());
 
     let message_handler = |bot: Bot, msg: Message, collector: Arc<UserCollector>| async move {
         handle_message(bot, msg, collector).await
@@ -48,27 +43,22 @@ pub async fn run(cfg: &AppConfig) -> Result<()> {
     .build();
 
     let shutdown_token = dispatcher.shutdown_token();
-    let handle = tokio::spawn(async move {
+    let dispatch_handle = tokio::spawn(async move {
         dispatcher.dispatch().await;
     });
 
     info!("Telegram бот запущен, ожидаем сообщения...");
 
-    tokio::select! {
-        _ = signal::ctrl_c() => {
-            info!("Получен сигнал остановки, начинаем graceful shutdown...");
-        }
-    }
-
     if let Err(e) = shutdown_token.shutdown() {
         error!("Ошибка при остановке диспетчера: {}", e);
     }
 
-    cancel_token.cancel();
+    collector_handle.abort();
+    udp_handle.abort();
+    stats_handle.abort();
+    dispatch_handle.abort();
 
-    let _ = tokio::time::timeout(Duration::from_secs(5), handle).await;
-
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
     info!("Приложение завершено");
     Ok(())
@@ -84,50 +74,44 @@ fn create_bot() -> Result<Bot> {
     Ok(Bot::new(token))
 }
 
-fn spawn_collector(collector: Arc<UserCollector>, cancel_token: CancellationToken) {
-    tokio::spawn(async move {
-        if let Err(e) = collector.start_collecting(cancel_token).await {
+fn spawn_collector(collector: Arc<UserCollector>) -> tokio::task::JoinHandle<()> {
+    let handle = tokio::spawn(async move {
+        if let Err(e) = collector.start_collecting().await {
             error!("Коллектор остановлен с ошибкой: {}", e);
         }
     });
     info!("Коллектор пользователей запущен");
+    handle
 }
 
 async fn spawn_udp_listener(
     cfg: &AppConfig,
     bot: Bot,
     collector: Arc<UserCollector>,
-    cancel_token: CancellationToken,
-) -> Result<()> {
+) -> Result<tokio::task::JoinHandle<()>> {
     let socket_service = SocketService::bind(cfg.service_addr()).await?;
-    let listener =
-        UdpListener::new(cfg.clone(), socket_service, bot, collector, cancel_token).await;
+    let listener = UdpListener::new(cfg.clone(), socket_service, bot, collector).await;
     info!("UDP сервер запущен на {}", cfg.service_addr());
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         if let Err(e) = listener.start_listening().await {
             error!("UDP слушатель остановлен с ошибкой: {}", e);
         }
     });
-    Ok(())
+    Ok(handle)
 }
 
-fn spawn_stats_reporter(collector: Arc<UserCollector>, cancel_token: CancellationToken) {
-    tokio::spawn(async move {
+fn spawn_stats_reporter(collector: Arc<UserCollector>) -> tokio::task::JoinHandle<()> {
+    let handle = tokio::spawn(async move {
         let mut interval = interval(Duration::from_secs(60));
         loop {
-            tokio::select! {
-                _ = interval.tick() => {
-                    if let Ok((total, active)) = collector.get_stats().await {
-                        info!("Статистика: всего={}, активно={}", total, active);
-                    }
-                }
-                _ = cancel_token.cancelled() => {
-                    info!("Репортёр статистики завершает работу");
-                    break;
-                }
+            interval.tick().await;
+            if let Ok((total, active)) = collector.get_stats().await {
+                info!("Статистика: всего={}, активно={}", total, active);
             }
         }
     });
+    info!("Репортер статистики запущен");
+    handle
 }
 
 async fn handle_message(

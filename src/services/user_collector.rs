@@ -7,7 +7,6 @@ use log::{debug, error, info};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::interval;
-use tokio_util::sync::CancellationToken;
 
 pub struct UserCollector {
     cfg: AppConfig,
@@ -24,7 +23,7 @@ impl UserCollector {
         }
     }
 
-    pub async fn start_collecting(&self, cancel_token: CancellationToken) -> Result<()> {
+    pub async fn start_collecting(&self) -> Result<()> {
         match self.repo.get_active_chat_ids().await {
             Ok(ids) => {
                 let mut active = self.active_users.lock().await;
@@ -73,10 +72,6 @@ impl UserCollector {
                             info!("Удалено {} старых записей", deleted);
                         }
                     }
-                }
-                _ = cancel_token.cancelled() => {
-                    info!("Коллектор пользователей завершает работу по сигналу");
-                    return Ok(());
                 }
             }
         }
@@ -236,15 +231,10 @@ mod tests {
         let cfg = test_config();
         let repo = Arc::new(mock_repo);
         let collector = Arc::new(UserCollector::new(cfg, repo));
-        let cancel_token = CancellationToken::new();
 
         let collector_clone = collector.clone();
-        let cancel_token_clone = cancel_token.clone();
         let handle = tokio::spawn(async move {
-            collector_clone
-                .start_collecting(cancel_token_clone)
-                .await
-                .unwrap();
+            collector_clone.start_collecting().await.unwrap();
         });
 
         time::advance(Duration::from_millis(10)).await;
@@ -254,8 +244,6 @@ mod tests {
             active.as_ref(),
             &vec!["start1".to_string(), "start2".to_string()]
         );
-
-        cancel_token.cancel();
         handle.await.unwrap();
     }
 
@@ -285,15 +273,10 @@ mod tests {
 
         let repo = Arc::new(mock_repo);
         let collector = Arc::new(UserCollector::new(cfg, repo));
-        let cancel_token = CancellationToken::new();
 
         let collector_clone = collector.clone();
-        let cancel_token_clone = cancel_token.clone();
         let handle = tokio::spawn(async move {
-            collector_clone
-                .start_collecting(cancel_token_clone)
-                .await
-                .unwrap();
+            collector_clone.start_collecting().await.unwrap();
         });
 
         tokio::task::yield_now().await;
@@ -307,8 +290,6 @@ mod tests {
 
         let active = collector.get_active_ids().await;
         assert_eq!(active.as_ref(), &vec!["after_update".to_string()]);
-
-        cancel_token.cancel();
         handle.await.unwrap();
     }
 }
