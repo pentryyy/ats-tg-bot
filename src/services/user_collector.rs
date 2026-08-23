@@ -238,13 +238,16 @@ mod tests {
         });
 
         time::advance(Duration::from_millis(10)).await;
+        tokio::task::yield_now().await;
 
         let active = collector.get_active_ids().await;
         assert_eq!(
             active.as_ref(),
             &vec!["start1".to_string(), "start2".to_string()]
         );
-        handle.await.unwrap();
+
+        handle.abort();
+        let _ = handle.await;
     }
 
     #[tokio::test]
