@@ -140,6 +140,6 @@ impl DatabaseRepositoryTrait for DatabaseRepository {
         .fetch_optional(&self.pool)
         .await?;
 
-        Ok(row.map_or(false, |r| r.try_get("is_active").unwrap_or(false)))
+        Ok(row.is_some_and(|r| r.try_get("is_active").unwrap_or(false)))
     }
 }

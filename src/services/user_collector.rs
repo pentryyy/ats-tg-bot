@@ -54,12 +54,9 @@ impl UserCollectorTrait for UserCollector {
             tokio::select! {
                 _ = interval_timer.tick() => {
                     let deactivate_minutes = self.cfg.deactivate_after_minutes();
-                    if let Ok(affected) = self.repo.deactivate_old_users(deactivate_minutes).await {
-                        if affected > 0 {
-                            info!("Деактивировано {} пользователей", affected);
-                        }
+                    if let Ok(affected) = self.repo.deactivate_old_users(deactivate_minutes).await && affected > 0 {
+                        info!("Деактивировано {} пользователей", affected);
                     }
-
                     if let Ok(ids) = self.repo.get_active_chat_ids().await {
                         let mut active = self.active_users.lock().await;
                         *active = Arc::new(ids);
@@ -70,10 +67,8 @@ impl UserCollectorTrait for UserCollector {
                 }
                 _ = cleanup_timer.tick() => {
                     let cleanup_days = self.cfg.cleanup_after_days();
-                    if let Ok(deleted) = self.repo.cleanup_old_users(cleanup_days).await {
-                        if deleted > 0 {
-                            info!("Удалено {} старых записей", deleted);
-                        }
+                   if let Ok(deleted) = self.repo.cleanup_old_users(cleanup_days).await && deleted > 0 {
+                        info!("Удалено {} старых записей", deleted);
                     }
                 }
             }
@@ -85,7 +80,7 @@ impl UserCollectorTrait for UserCollector {
     }
 
     async fn get_stats(&self) -> Result<(i64, i64)> {
-        self.repo.get_stats().await.map_err(Into::into)
+        self.repo.get_stats().await
     }
 
     async fn add_user_from_telegram(&self, chat_id: &str) {

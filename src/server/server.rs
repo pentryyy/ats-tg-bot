@@ -129,12 +129,11 @@ async fn handle_message(
     msg: Message,
     collector: Arc<dyn UserCollectorTrait>,
 ) -> Result<(), teloxide::RequestError> {
-    if let Some(text) = msg.text() {
-        if let Some(cmd_str) = text.split_whitespace().next() {
-            if let Some(cmd) = AtsBotCommand::from_str(cmd_str) {
-                cmd.command_handler(bot, msg, collector).await?;
-            }
-        }
+    if let Some(text) = msg.text()
+        && let Some(cmd_str) = text.split_whitespace().next()
+        && let Some(cmd) = AtsBotCommand::from_str(cmd_str)
+    {
+        cmd.command_handler(bot, msg, collector).await?;
     }
     Ok(())
 }
