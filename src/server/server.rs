@@ -19,6 +19,7 @@ use teloxide::{
 };
 use tokio::signal;
 use tokio::time::interval;
+use tokio_util::sync::CancellationToken;
 
 pub async fn run(cfg: &AppConfig) -> Result<()> {
     init_logger(cfg);
@@ -99,9 +100,10 @@ async fn spawn_udp_listener(
 ) -> Result<tokio::task::JoinHandle<()>> {
     let socket_service = SocketService::bind(cfg.service_addr()).await?;
     let listener = UdpListener::new(cfg.clone(), socket_service, bot, collector).await;
+    let cancel_token = CancellationToken::new();
     info!("UDP сервер запущен на {}", cfg.service_addr());
     let handle = tokio::spawn(async move {
-        if let Err(e) = listener.start_listening().await {
+        if let Err(e) = listener.start_listening(cancel_token).await {
             error!("UDP слушатель остановлен с ошибкой: {}", e);
         }
     });

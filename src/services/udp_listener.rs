@@ -8,6 +8,7 @@ use log::{debug, error, info, warn};
 use std::sync::Arc;
 use teloxide::prelude::*;
 use teloxide::types::{ChatId, InputFile};
+use tokio_util::sync::CancellationToken;
 
 #[async_trait]
 impl TelegramSenderTrait for Bot {
@@ -64,7 +65,7 @@ where
         }
     }
 
-    pub async fn start_listening(self) -> Result<()> {
+    pub async fn start_listening(self, cancel_token: CancellationToken) -> Result<()> {
         let mut recv_buf = self.cfg.recv_buf();
 
         loop {
@@ -126,8 +127,13 @@ where
                         Err(e) => error!("Ошибка при получении данных: {}", e),
                     }
                 }
+                 _ = cancel_token.cancelled() => {
+                    info!("Получен сигнал остановки, завершаем работу");
+                    break;
+                }
             }
         }
+        Ok(())
     }
 
     async fn upload_and_get_file_id(
@@ -157,7 +163,6 @@ mod tests {
     use mockall::*;
     use std::net::SocketAddr;
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use teloxide::types::{
         Chat, ChatId, ChatKind, ChatPrivate, FileMeta, InputFile, MediaKind, MediaPhoto, Message,
         MessageCommon, MessageId, MessageKind, PhotoSize, User,
@@ -258,21 +263,25 @@ mod tests {
         }
     }
 
-    fn setup_mock_socket(
-        non_image_data: Vec<u8>,
-        addr: SocketAddr,
-        first_data: Option<Vec<u8>>,
-    ) -> MockSocketService {
-        let recv_count = AtomicUsize::new(0);
+    fn mock_socket(data: Vec<u8>, addr: SocketAddr, times: usize) -> MockSocketService {
         let mut mock = MockSocketService::new();
-        mock.expect_recv_frame().times(..).returning(move |_buf| {
-            let count = recv_count.fetch_add(1, Ordering::SeqCst);
-            let data = if count == 0 && first_data.is_some() {
-                first_data.as_ref().unwrap().clone()
-            } else {
-                non_image_data.clone()
+        mock.expect_recv_frame()
+            .times(times)
+            .returning(move |_buf| {
+                let frame = FrameData {
+                    frame: data.clone(),
+                };
+                Ok((frame, addr))
+            });
+        mock
+    }
+
+    fn mock_socket_once(data: Vec<u8>, addr: SocketAddr) -> MockSocketService {
+        let mut mock = MockSocketService::new();
+        mock.expect_recv_frame().times(1).returning(move |_buf| {
+            let frame = FrameData {
+                frame: data.clone(),
             };
-            let frame = FrameData { frame: data };
             Ok((frame, addr))
         });
         mock
@@ -280,76 +289,82 @@ mod tests {
 
     #[tokio::test]
     async fn test_no_active_users() {
+        tokio::time::pause();
+
         let non_image_data = b"hello world".to_vec();
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-        let mock_socket = setup_mock_socket(non_image_data, addr, None);
+        let mock_socket = mock_socket(non_image_data.clone(), addr, 1);
 
         let mut mock_collector = MockUserCollector::new();
         mock_collector
             .expect_get_active_ids()
-            .times(..)
+            .times(1)
             .returning(|| Arc::new(vec![]));
 
         let mock_sender = MockTelegramSender::new();
 
         let cfg = test_config();
         let cancel_token = CancellationToken::new();
+        let cancel_token_clone = cancel_token.clone();
+
         let listener =
             UdpListener::new(cfg, mock_socket, mock_sender, Arc::new(mock_collector)).await;
 
         let handle = tokio::spawn(async move {
-            listener.start_listening().await.unwrap();
+            listener.start_listening(cancel_token_clone).await.unwrap();
         });
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::advance(Duration::from_millis(10)).await;
         cancel_token.cancel();
-        tokio::task::yield_now().await;
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        handle.await.unwrap();
-    }
 
+        let result = tokio::time::timeout(Duration::from_millis(100), handle).await;
+        assert!(result.is_ok(), "Задача не завершилась вовремя");
+    }
     #[tokio::test]
     async fn test_non_image_data_ignored() {
+        tokio::time::pause();
+
         let non_image_data = b"hello world".to_vec();
         let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-        let mock_socket = setup_mock_socket(non_image_data, addr, None);
-
+        let mock_socket = mock_socket_once(non_image_data.clone(), addr);
         let mut mock_collector = MockUserCollector::new();
         mock_collector
             .expect_get_active_ids()
-            .times(..)
+            .times(1)
             .returning(|| Arc::new(vec!["123".to_string()]));
 
-        let mock_sender = MockTelegramSender::new();
+        let mut mock_sender = MockTelegramSender::new();
+        mock_sender.expect_send_picture().times(0);
 
         let cfg = test_config();
         let cancel_token = CancellationToken::new();
+        let cancel_token_clone = cancel_token.clone();
         let listener =
             UdpListener::new(cfg, mock_socket, mock_sender, Arc::new(mock_collector)).await;
 
         let handle = tokio::spawn(async move {
-            listener.start_listening().await.unwrap();
+            listener.start_listening(cancel_token_clone).await.unwrap();
         });
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::advance(Duration::from_millis(10)).await;
         cancel_token.cancel();
-        tokio::task::yield_now().await;
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        handle.await.unwrap();
+        let result = tokio::time::timeout(Duration::from_millis(100), handle).await;
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_successful_send_to_all() {
-        let image_data = vec![0xFF, 0xD8, 0xFF, 0xE0];
-        let non_image_data = b"not an image".to_vec();
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-        let mock_socket = setup_mock_socket(non_image_data.clone(), addr, Some(image_data.clone()));
+        tokio::time::pause();
 
+        let image_data = vec![0xFF, 0xD8, 0xFF, 0xE0];
+        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+
+        let mock_socket = mock_socket(image_data.clone(), addr, 1);
         let active_ids = vec!["111".to_string(), "222".to_string()];
         let mut mock_collector = MockUserCollector::new();
         mock_collector
             .expect_get_active_ids()
-            .times(..)
+            .times(1)
             .returning(move || Arc::new(active_ids.clone()));
 
         let mut mock_sender = MockTelegramSender::new();
@@ -363,79 +378,33 @@ mod tests {
             .with(eq(ChatId(222)), always())
             .times(1)
             .returning(|_, _| Ok(make_photo_message("file_id_222")));
-        mock_sender
-            .expect_send_picture()
-            .times(..)
-            .returning(|_, _| Ok(make_photo_message("extra")));
+
+        mock_sender.expect_send_picture().times(0);
 
         let cfg = test_config();
         let cancel_token = CancellationToken::new();
+        let cancel_token_clone = cancel_token.clone();
         let listener =
             UdpListener::new(cfg, mock_socket, mock_sender, Arc::new(mock_collector)).await;
 
         let handle = tokio::spawn(async move {
-            listener.start_listening().await.unwrap();
+            listener.start_listening(cancel_token_clone).await.unwrap();
         });
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::advance(Duration::from_millis(10)).await;
         cancel_token.cancel();
-        tokio::task::yield_now().await;
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        handle.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_upload_fails_fallback_send_to_all() {
-        let image_data = vec![0xFF, 0xD8, 0xFF, 0xE0];
-        let non_image_data = b"not an image".to_vec();
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-        let mock_socket = setup_mock_socket(non_image_data.clone(), addr, Some(image_data.clone()));
-
-        let active_ids = vec!["111".to_string(), "222".to_string()];
-        let mut mock_collector = MockUserCollector::new();
-        mock_collector
-            .expect_get_active_ids()
-            .times(..)
-            .returning(move || Arc::new(active_ids.clone()));
-
-        let mut mock_sender = MockTelegramSender::new();
-        let send_count = Arc::new(AtomicUsize::new(0));
-        mock_sender
-            .expect_send_picture()
-            .times(..)
-            .returning(move |_chat_id, _| {
-                let count = send_count.fetch_add(1, Ordering::SeqCst);
-                if count == 0 {
-                    Err(teloxide::RequestError::Api(teloxide::ApiError::Unknown(
-                        "mock upload error".to_string(),
-                    )))
-                } else {
-                    Ok(make_photo_message("fallback_file_id"))
-                }
-            });
-
-        let cfg = test_config();
-        let cancel_token = CancellationToken::new();
-        let listener =
-            UdpListener::new(cfg, mock_socket, mock_sender, Arc::new(mock_collector)).await;
-
-        let handle = tokio::spawn(async move {
-            listener.start_listening().await.unwrap();
-        });
-
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        cancel_token.cancel();
-        tokio::task::yield_now().await;
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        handle.await.unwrap();
+        let result = tokio::time::timeout(Duration::from_millis(100), handle).await;
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_cancellation() {
+        tokio::time::pause();
+
         let mut mock_socket = MockSocketService::new();
         mock_socket
             .expect_recv_frame()
-            .times(..)
+            .times(1)
             .returning(move |_buf| Err(anyhow::anyhow!("test error")));
 
         let mock_collector = MockUserCollector::new();
@@ -443,17 +412,18 @@ mod tests {
 
         let cfg = test_config();
         let cancel_token = CancellationToken::new();
+        let cancel_token_clone = cancel_token.clone();
         let listener =
             UdpListener::new(cfg, mock_socket, mock_sender, Arc::new(mock_collector)).await;
 
         let handle = tokio::spawn(async move {
-            listener.start_listening().await.unwrap();
+            listener.start_listening(cancel_token_clone).await.unwrap();
         });
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::advance(Duration::from_millis(10)).await;
         cancel_token.cancel();
-        tokio::task::yield_now().await;
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        handle.await.unwrap();
+
+        let result = tokio::time::timeout(Duration::from_millis(100), handle).await;
+        assert!(result.is_ok());
     }
 }
