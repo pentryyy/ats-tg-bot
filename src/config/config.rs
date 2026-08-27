@@ -128,3 +128,32 @@ impl AppConfig {
         )
     }
 }
+
+/// Используется в юнит тестах.
+#[allow(dead_code)]
+pub fn test_config() -> AppConfig {
+    AppConfig {
+        log_level: "info".to_string(),
+        user_collector: UserCollectorConfig {
+            update_interval: Duration::from_millis(100),
+            deactivate_after: Duration::from_secs(30 * 60),
+            cleanup_after: Duration::from_secs(7 * 24 * 60 * 60),
+            cleanup_interval: Duration::from_millis(200),
+        },
+        db: DbConfig {
+            driver: DriverType::Postgres,
+            database: "test_db".to_string(),
+            host: "localhost".to_string(),
+            port: 5432,
+            credentials: CredentialsConfig {
+                username: "user".to_string(),
+                password: "pass".to_string(),
+            },
+        },
+        server: ServerConfig {
+            recv_buf: 1024,
+            host: "127.0.0.1".to_string(),
+            port: 8080,
+        },
+    }
+}
