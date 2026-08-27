@@ -27,11 +27,11 @@ impl AtsBotCommand {
         }
     }
 
-    pub async fn command_handler<C: UserCollectorTrait>(
+    pub async fn command_handler(
         &self,
         bot: Bot,
         msg: Message,
-        collector: Arc<C>,
+        collector: Arc<dyn UserCollectorTrait>,
     ) -> ResponseResult<()> {
         let chat_id = msg.chat.id;
         let chat_id_str = chat_id.0.to_string();

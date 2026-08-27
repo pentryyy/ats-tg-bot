@@ -127,7 +127,7 @@ fn spawn_stats_reporter(collector: Arc<UserCollector>) -> tokio::task::JoinHandl
 async fn handle_message(
     bot: Bot,
     msg: Message,
-    collector: Arc<UserCollector>,
+    collector: Arc<dyn UserCollectorTrait>,
 ) -> Result<(), teloxide::RequestError> {
     if let Some(text) = msg.text() {
         if let Some(cmd_str) = text.split_whitespace().next() {
@@ -137,4 +137,55 @@ async fn handle_message(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::mocks::MockUserCollector;
+    use crate::utils::tg_bot_test_message::make_text_test_message;
+    use mockall::predicate::*;
+    use teloxide::Bot;
+
+    #[tokio::test]
+    async fn test_handle_message_unknown_command() {
+        let mock_collector = MockUserCollector::new();
+        let bot = Bot::new("dummy_token".to_string());
+        let msg = make_text_test_message("/unknown");
+        let collector = Arc::new(mock_collector);
+
+        let result = handle_message(bot, msg, collector).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_message_known_command() {
+        let mut mock_collector = MockUserCollector::new();
+        mock_collector
+            .expect_add_user_from_telegram()
+            .with(eq("123"))
+            .times(1)
+            .returning(|_| ());
+
+        mock_collector.expect_is_user_active().returning(|_| true);
+        mock_collector.expect_deactivate_user().returning(|_| ());
+
+        let bot = Bot::new("dummy_token".to_string());
+        let msg = make_text_test_message("/start");
+        let collector = Arc::new(mock_collector);
+
+        let result = handle_message(bot, msg, collector).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_handle_message_non_command() {
+        let mock_collector = MockUserCollector::new();
+        let bot = Bot::new("dummy_token".to_string());
+        let msg = make_text_test_message("Hello, world!");
+        let collector = Arc::new(mock_collector);
+
+        let result = handle_message(bot, msg, collector).await;
+        assert!(result.is_ok());
+    }
 }

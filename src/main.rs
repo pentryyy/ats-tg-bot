@@ -5,6 +5,7 @@ mod server;
 mod services;
 mod traits;
 mod types;
+mod utils;
 
 use crate::config::config::AppConfig;
 use crate::server::server::run;

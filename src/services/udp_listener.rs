@@ -157,16 +157,14 @@ mod tests {
     use crate::config::config::test_config;
     use crate::dto::request::frame::FrameData;
     use crate::traits::socket_service::SocketServiceTrait;
-    use crate::traits::user_collector::UserCollectorTrait;
+    use crate::utils::mocks::MockUserCollector;
+    use crate::utils::tg_bot_test_message::make_photo_test_message;
     use anyhow::Result;
     use mockall::predicate::*;
     use mockall::*;
     use std::net::SocketAddr;
     use std::sync::Arc;
-    use teloxide::types::{
-        Chat, ChatId, ChatKind, ChatPrivate, FileMeta, InputFile, MediaKind, MediaPhoto, Message,
-        MessageCommon, MessageId, MessageKind, PhotoSize, User,
-    };
+    use teloxide::types::{ChatId, InputFile, Message};
     use tokio::time::Duration;
     use tokio_util::sync::CancellationToken;
 
@@ -185,81 +183,6 @@ mod tests {
         #[async_trait]
         impl TelegramSenderTrait for TelegramSender {
             async fn send_picture(&self, chat_id: ChatId, file: InputFile) -> Result<Message, teloxide::RequestError>;
-        }
-    }
-
-    mock! {
-        pub UserCollector {}
-
-        #[async_trait]
-        impl UserCollectorTrait for UserCollector {
-            async fn get_active_ids(&self) -> Arc<Vec<String>>;
-            async fn get_stats(&self) -> Result<(i64, i64)>;
-            async fn add_user_from_telegram(&self, chat_id: &str);
-            async fn deactivate_user(&self, chat_id: &str);
-            async fn is_user_active(&self, chat_id: &str) -> bool;
-        }
-    }
-
-    fn make_photo_message(file_id: &str) -> Message {
-        Message {
-            id: MessageId(1),
-            thread_id: None,
-            date: chrono::Utc::now(),
-            chat: Chat {
-                id: ChatId(123),
-                kind: ChatKind::Private(ChatPrivate {
-                    username: None,
-                    first_name: Some("Test".to_string()),
-                    last_name: None,
-                    bio: None,
-                    has_private_forwards: None,
-                    has_restricted_voice_and_video_messages: None,
-                    emoji_status_custom_emoji_id: None,
-                }),
-                photo: None,
-                pinned_message: None,
-                message_auto_delete_time: None,
-                has_hidden_members: false,
-                has_aggressive_anti_spam_enabled: false,
-            },
-            via_bot: None,
-            kind: MessageKind::Common(MessageCommon {
-                from: Some(User {
-                    id: UserId(123),
-                    is_bot: false,
-                    first_name: "Test".to_string(),
-                    last_name: None,
-                    username: None,
-                    language_code: None,
-                    is_premium: false,
-                    added_to_attachment_menu: false,
-                }),
-                sender_chat: None,
-                author_signature: None,
-                forward: None,
-                reply_to_message: None,
-                edit_date: None,
-                media_kind: MediaKind::Photo(MediaPhoto {
-                    photo: vec![PhotoSize {
-                        file: FileMeta {
-                            id: file_id.to_string(),
-                            unique_id: "".to_string(),
-                            size: 100,
-                        },
-                        width: 100,
-                        height: 100,
-                    }],
-                    caption: None,
-                    caption_entities: vec![],
-                    has_media_spoiler: false,
-                    media_group_id: None,
-                }),
-                reply_markup: None,
-                is_topic_message: false,
-                is_automatic_forward: false,
-                has_protected_content: false,
-            }),
         }
     }
 
@@ -372,12 +295,12 @@ mod tests {
             .expect_send_picture()
             .with(eq(ChatId(111)), always())
             .times(1)
-            .returning(|_, _| Ok(make_photo_message("file_id_111")));
+            .returning(|_, _| Ok(make_photo_test_message("file_id_111")));
         mock_sender
             .expect_send_picture()
             .with(eq(ChatId(222)), always())
             .times(1)
-            .returning(|_, _| Ok(make_photo_message("file_id_222")));
+            .returning(|_, _| Ok(make_photo_test_message("file_id_222")));
 
         mock_sender.expect_send_picture().times(0);
 

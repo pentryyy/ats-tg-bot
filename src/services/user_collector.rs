@@ -22,8 +22,11 @@ impl UserCollector {
             active_users: Arc::new(Mutex::new(Arc::new(Vec::new()))),
         }
     }
+}
 
-    pub async fn start_collecting(&self) -> Result<()> {
+#[async_trait]
+impl UserCollectorTrait for UserCollector {
+    async fn start_collecting(&self) -> Result<()> {
         match self.repo.get_active_chat_ids().await {
             Ok(ids) => {
                 let mut active = self.active_users.lock().await;
@@ -76,10 +79,7 @@ impl UserCollector {
             }
         }
     }
-}
 
-#[async_trait]
-impl UserCollectorTrait for UserCollector {
     async fn get_active_ids(&self) -> Arc<Vec<String>> {
         self.active_users.lock().await.clone()
     }
